@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Image Cleaner UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #0f1115; color: #f3f4f6; }
+    .wrap { max-width: 1200px; margin: 20px auto; padding: 0 16px; }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    button, input, select { padding: 8px 10px; border-radius: 8px; border: 1px solid #333; background: #181b22; color: #f3f4f6; }
+    .stage { position: relative; width: fit-content; max-width: 100%; border: 1px solid #2b2f39; border-radius: 10px; overflow: auto; background: #111; }
+    canvas { display: block; }
+    #baseCanvas { position: relative; z-index: 1; }
+    #maskCanvas { position: absolute; left: 0; top: 0; z-index: 2; cursor: crosshair; }
+    .status { margin-top: 10px; color: #93c5fd; min-height: 24px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h2>Manual Image Cleaning (Draw Mask → Clean)</h2>
+  <div class="toolbar">
+    <input id="fileInput" type="file" accept="image/*" />
+    <label>Brush <input id="brushSize" type="range" min="4" max="120" value="28" /></label>
+    <button id="drawModeBtn">Tool: Draw</button>
+    <button id="clearMaskBtn">Clear Mask</button>
+    <label>Guidance <input id="guidance" type="number" value="2.0" step="0.1" min="1" max="6" /></label>
+    <label>Seed <input id="seed" type="number" placeholder="optional" /></label>
+    <button id="cleanBtn">Clean Selected Area</button>
+    <button id="downloadBtn">Download Result</button>
+  </div>
+
+  <div class="stage" id="stage">
+    <canvas id="baseCanvas"></canvas>
+    <canvas id="maskCanvas"></canvas>
+  </div>
+
+  <div class="status" id="status">Load an image to start.</div>
+</div>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const brushSizeEl = document.getElementById('brushSize');
+const drawModeBtn = document.getElementById('drawModeBtn');
+const clearMaskBtn = document.getElementById('clearMaskBtn');
+const cleanBtn = document.getElementById('cleanBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const guidanceEl = document.getElementById('guidance');
+const seedEl = document.getElementById('seed');
+const statusEl = document.getElementById('status');
+
+const baseCanvas = document.getElementById('baseCanvas');
+const maskCanvas = document.getElementById('maskCanvas');
+const baseCtx = baseCanvas.getContext('2d');
+const maskCtx = maskCanvas.getContext('2d');
+
+let drawing = false;
+let mode = 'draw';
+let loaded = false;
+
+function setStatus(msg) { statusEl.textContent = msg; }
+
+function setCanvasSize(w, h) {
+  baseCanvas.width = w;
+  baseCanvas.height = h;
+  maskCanvas.width = w;
+  maskCanvas.height = h;
+  maskCtx.clearRect(0, 0, w, h);
+}
+
+function drawMaskPoint(x, y) {
+  const size = Number(brushSizeEl.value || 28);
+  maskCtx.globalCompositeOperation = mode === 'draw' ? 'source-over' : 'destination-out';
+  maskCtx.fillStyle = 'white';
+  maskCtx.beginPath();
+  maskCtx.arc(x, y, size / 2, 0, Math.PI * 2);
+  maskCtx.fill();
+}
+
+function eventPos(e) {
+  const rect = maskCanvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (maskCanvas.width / rect.width);
+  const y = (e.clientY - rect.top) * (maskCanvas.height / rect.height);
+  return { x, y };
+}
+
+maskCanvas.addEventListener('pointerdown', (e) => {
+  if (!loaded) return;
+  drawing = true;
+  const { x, y } = eventPos(e);
+  drawMaskPoint(x, y);
+});
+
+maskCanvas.addEventListener('pointermove', (e) => {
+  if (!drawing || !loaded) return;
+  const { x, y } = eventPos(e);
+  drawMaskPoint(x, y);
+});
+
+window.addEventListener('pointerup', () => { drawing = false; });
+
+fileInput.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    setCanvasSize(img.width, img.height);
+    baseCtx.drawImage(img, 0, 0);
+    loaded = true;
+    setStatus(`Loaded ${img.width}x${img.height}. Draw over text/object to remove.`);
+  };
+  img.src = URL.createObjectURL(file);
+});
+
+drawModeBtn.addEventListener('click', () => {
+  mode = mode === 'draw' ? 'erase' : 'draw';
+  drawModeBtn.textContent = mode === 'draw' ? 'Tool: Draw' : 'Tool: Erase';
+});
+
+clearMaskBtn.addEventListener('click', () => {
+  maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+});
+
+function dataURL(canvas) {
+  return canvas.toDataURL('image/png');
+}
+
+cleanBtn.addEventListener('click', async () => {
+  if (!loaded) return;
+
+  setStatus('Cleaning selected area...');
+  cleanBtn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('image', dataURL(baseCanvas));
+    fd.append('mask', dataURL(maskCanvas));
+    fd.append('guidance', guidanceEl.value || '2.0');
+    if ((seedEl.value || '').trim()) fd.append('seed', seedEl.value.trim());
+
+    const res = await fetch('/api/clean/', { method: 'POST', body: fd });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (_) {
+      const fallback = await res.text();
+      throw new Error(`Server returned non-JSON response (${res.status}): ${fallback.slice(0, 300)}`);
+    }
+
+    if (!res.ok || !data.ok) {
+      const details = data.details ? ` | ${data.details}` : '';
+      const t = data.type ? ` [${data.type}]` : '';
+      throw new Error(`${data.error || 'Failed to clean image'}${t}${details}`);
+    }
+
+    const out = new Image();
+    out.onload = () => {
+      setCanvasSize(out.width, out.height);
+      baseCtx.drawImage(out, 0, 0);
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      setStatus('Done. You can draw again and clean more areas.');
+    };
+    out.src = data.result;
+  } catch (err) {
+    setStatus(`Error: ${err.message}`);
+  } finally {
+    cleanBtn.disabled = false;
+  }
+});
+
+downloadBtn.addEventListener('click', () => {
+  if (!loaded) return;
+  const a = document.createElement('a');
+  a.href = baseCanvas.toDataURL('image/png');
+  a.download = 'cleaned.png';
+  a.click();
+});
+</script>
+</body>
+</html>
