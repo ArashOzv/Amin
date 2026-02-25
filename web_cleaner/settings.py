@@ -62,8 +62,3 @@ STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# Allow tall, high-resolution uploads (e.g., ~800x16000) sent as multipart+base64 from UI.
-# 80 MB keeps headroom for PNG + data URL overhead.
-DATA_UPLOAD_MAX_MEMORY_SIZE = 80 * 1024 * 1024
-FILE_UPLOAD_MAX_MEMORY_SIZE = 80 * 1024 * 1024

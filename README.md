@@ -49,13 +49,3 @@ export FLUX_WORKER_URL="https://your-worker-url/"
 3. Click **Clean Selected Area**.
 4. If needed, paint another area and clean again.
 5. Download final PNG.
-
-
-## Upload size limits
-
-Django is configured for large vertical pages with:
-
-- `DATA_UPLOAD_MAX_MEMORY_SIZE = 80 MB`
-- `FILE_UPLOAD_MAX_MEMORY_SIZE = 80 MB`
-
-If you still hit `RequestDataTooBig`, raise these values in `web_cleaner/settings.py`.

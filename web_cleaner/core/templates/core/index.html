@@ -138,19 +138,8 @@ cleanBtn.addEventListener('click', async () => {
     if ((seedEl.value || '').trim()) fd.append('seed', seedEl.value.trim());
 
     const res = await fetch('/api/clean/', { method: 'POST', body: fd });
-    let data = null;
-    try {
-      data = await res.json();
-    } catch (_) {
-      const fallback = await res.text();
-      throw new Error(`Server returned non-JSON response (${res.status}): ${fallback.slice(0, 300)}`);
-    }
-
-    if (!res.ok || !data.ok) {
-      const details = data.details ? ` | ${data.details}` : '';
-      const t = data.type ? ` [${data.type}]` : '';
-      throw new Error(`${data.error || 'Failed to clean image'}${t}${details}`);
-    }
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Failed to clean image');
 
     const out = new Image();
     out.onload = () => {
