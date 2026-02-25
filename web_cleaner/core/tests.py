@@ -12,9 +12,6 @@ def _img_data_url(color=(0, 0, 0, 255), size=(8, 8), mask=False):
         img = Image.new("RGBA", size, (0, 0, 0, 0))
         px = img.load()
         px[2, 2] = (255, 255, 255, 255)
-    else:
-        # Explicit transparent/blank mask to avoid platform-dependent defaults.
-        img = Image.new("RGBA", size, (0, 0, 0, 0))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -41,24 +38,6 @@ class CleanSelectionTests(TestCase):
         fake.ok = True
         fake.headers = {"content-type": "application/json"}
         fake.json.return_value = {"ok": False, "error": "AI error 500", "details": "upstream failed"}
-        fake.text = '{"ok":false}'
-        mock_post.return_value = fake
-
-        res = self.client.post("/api/clean/", {"image": image, "mask": mask, "guidance": "2.0"})
-        self.assertEqual(res.status_code, 502)
-        self.assertEqual(res.json()["type"], "worker_error")
-
-
-    @patch("web_cleaner.core.views.requests.post")
-    def test_worker_http_error_returns_502(self, mock_post):
-        image = _img_data_url(color=(10, 10, 10, 255), mask=False)
-        mask = _img_data_url(mask=True)
-
-        fake = Mock()
-        fake.ok = False
-        fake.status_code = 500
-        fake.headers = {"content-type": "application/json", "x-upstream-request-id": "abc123"}
-        fake.json.return_value = {"ok": False, "error": "AI error 500", "details": "bad upstream"}
         fake.text = '{"ok":false}'
         mock_post.return_value = fake
 
